@@ -1,4 +1,5 @@
-local player = game.Players.LocalPlayer
+-- تأكد من أن هذه السكريبت تعمل في بيئة exploit مثل Synapse أو Krnl
+local player = game:GetService("Players").LocalPlayer
 local character = player.Character or player.CharacterAdded:Wait()
 local humanoidRootPart = character:WaitForChild("HumanoidRootPart")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -6,18 +7,20 @@ local Larry = ReplicatedStorage:WaitForChild("Modules"):WaitForChild("Larry")
 
 -- إعدادات الكود
 local MAX_WOOL_TO_COLLECT = 5
-local COLLECTION_INTERVAL = 1
-local MACHINE_POSITION_OFFSET = CFrame.new(0, 0, 2)
 local SPIN_TIME = 10 -- وقت انتظار تشغيل المكينة
-local STORAGE_CHECK_INTERVAL = 1 -- وقت انتظار بين فحص المخازن
+local CHECK_INTERVAL = 1 -- وقت الانتظار بين الفحص
 
+-- وظيفة الانتقال الآمن
 local function teleportTo(targetCFrame)
-    humanoidRootPart.CFrame = targetCFrame * CFrame.new(0, 3, 0)
-    wait(0.5)
-    humanoidRootPart.CFrame = targetCFrame * CFrame.new(0, 0, 2)
-    wait(0.5)
+    pcall(function()
+        humanoidRootPart.CFrame = targetCFrame * CFrame.new(0, 3, 0) -- الانتقال أعلى الهدف
+        wait(0.3)
+        humanoidRootPart.CFrame = targetCFrame * CFrame.new(0, 0, 2) -- النزول أمام الهدف
+        wait(0.3)
+    end)
 end
 
+-- وظيفة العثور على المكينة الخاصة باللاعب
 local function findMyMachine()
     for _, building in pairs(workspace.Buildings:GetChildren()) do
         if building.Name == "SpindleMachine" then
@@ -33,93 +36,90 @@ local function findMyMachine()
     return nil
 end
 
+-- وظيفة جمع الصوف
 local function collectWool()
-    local woolCount = 0
-    
+    local collected = 0
     for _, wool in pairs(workspace.DraggableObjects:GetChildren()) do
-        if wool.Name == "Wool" and woolCount < MAX_WOOL_TO_COLLECT then
+        if wool.Name == "Wool" and collected < MAX_WOOL_TO_COLLECT then
             teleportTo(wool:GetPivot())
             
-            local args = { [1] = wool }
-            local success, err = pcall(function()
-                Larry:WaitForChild("EVTRequestToCarry"):FireServer(unpack(args))
+            local args = {[1] = wool}
+            local success = pcall(function()
+                Larry.EVTRequestToCarry:FireServer(unpack(args))
             end)
             
             if success then
-                woolCount = woolCount + 1
-                print("تم جمع الصوف ("..woolCount.."/"..MAX_WOOL_TO_COLLECT..")")
-            else
-                print("فشل في جمع الصوف: "..err)
+                collected = collected + 1
+                print("تم جمع الصوف ("..collected.."/"..MAX_WOOL_TO_COLLECT..")")
             end
             
-            wait(COLLECTION_INTERVAL)
+            wait(CHECK_INTERVAL)
         end
     end
-    
-    return woolCount
+    return collected
 end
 
+-- وظيفة تشغيل المكينة
 local function spinMachine(machine)
     teleportTo(machine:GetPivot())
     
-    local args = { [1] = machine }
-    local success, err = pcall(function()
-        Larry:WaitForChild("EVTAnimateSpindle"):FireServer(unpack(args))
+    local args = {[1] = machine}
+    local success = pcall(function()
+        Larry.EVTAnimateSpindle:FireServer(unpack(args))
     end)
     
     if success then
         print("تم تشغيل المكينة، انتظار "..SPIN_TIME.." ثانية...")
         wait(SPIN_TIME)
         return true
-    else
-        print("فشل في تشغيل المكينة: "..err)
-        return false
     end
+    return false
 end
 
+-- وظيفة جمع WoolBundle
 local function pickupWoolBundle()
-    local woolBundle = workspace.DraggableObjects:FindFirstChild("WoolBundle")
-    if not woolBundle then
-        print("لم يتم العثور على WoolBundle")
-        return false
+    for _, bundle in pairs(workspace.DraggableObjects:GetChildren()) do
+        if bundle.Name == "WoolBundle" then
+            teleportTo(bundle:GetPivot())
+            
+            local args = {[1] = bundle}
+            local success = pcall(function()
+                Larry.EVTRequestToCarry:FireServer(unpack(args))
+            end)
+            
+            if success then
+                print("تم جمع WoolBundle")
+                return true
+            end
+        end
     end
-    
-    teleportTo(woolBundle:GetPivot())
-    
-    local args = { [1] = woolBundle }
-    local success, err = pcall(function()
-        Larry:WaitForChild("EVTRequestToCarry"):FireServer(unpack(args))
-    end)
-    
-    if success then
-        print("تم التقاط WoolBundle بنجاح")
-        return true
-    else
-        print("فشل في التقاط WoolBundle: "..err)
-        return false
-    end
+    return false
 end
 
-local function findStorageForItem(itemName)
-    -- البحث في جميع المخازن الكبيرة
+-- وظيفة تخزين WoolBundle
+local function storeWoolBundle()
     for _, shed in pairs(workspace.Buildings:GetChildren()) do
         if shed.Name == "LargeWoodenShed" then
-            -- البحث في جميع الرفوف
             local racks = shed:FindFirstChild("StorageRacks")
             if racks then
                 for _, rack in pairs(racks:GetChildren()) do
                     if rack.Name == "StorageRack" then
                         local storage = rack:FindFirstChild("Storage")
                         if storage then
-                            -- البحث في جميع الأماكن التخزينية (1, 2, 3)
                             for i = 1, 3 do
                                 local slot = storage:FindFirstChild(tostring(i))
                                 if slot then
                                     local occupant = slot:FindFirstChild("Occupant")
-                                    if occupant then
-                                        -- إذا كان المكان فارغاً أو يحتوي على نفس العنصر
-                                        if not occupant.Value or occupant.Value == itemName then
-                                            return slot
+                                    if not occupant or occupant.Value == "" then
+                                        teleportTo(slot:GetPivot())
+                                        
+                                        local success = pcall(function()
+                                            Larry.EVTRequestToDrop:FireServer()
+                                        end)
+                                        
+                                        if success then
+                                            print("تم تخزين WoolBundle في الرف "..i)
+                                            return true
                                         end
                                     end
                                 end
@@ -130,56 +130,37 @@ local function findStorageForItem(itemName)
             end
         end
     end
-    return nil
-end
-
-local function storeItemInStorage()
-    local storageSpot = findStorageForItem("WoolBundle")
-    if not storageSpot then
-        print("لم يتم العثور على مكان تخزين مناسب")
-        return false
-    end
-    
-    teleportTo(storageSpot:GetPivot())
-    
-    local success, err = pcall(function()
-        Larry:WaitForChild("EVTRequestToDrop"):FireServer()
-    end)
-    
-    if success then
-        print("تم تخزين WoolBundle في "..storageSpot:GetFullName())
-        return true
-    else
-        print("فشل في تخزين WoolBundle: "..err)
-        return false
-    end
+    return false
 end
 
 -- الدورة الرئيسية
-while true do
+local running = true
+while running do
     print("بدء دورة جديدة...")
     
     -- 1. جمع الصوف
-    local collectedCount = collectWool()
+    local collected = collectWool()
     
-    if collectedCount > 0 then
+    if collected > 0 then
         -- 2. الذهاب إلى المكينة
         local machine = findMyMachine()
         if machine then
-            -- 3. الإيداع في المكينة
+            -- 3. وضع الصوف في المكينة
             teleportTo(machine:GetPivot())
-            Larry:WaitForChild("EVTRequestToDrop"):FireServer()
+            pcall(function()
+                Larry.EVTRequestToDrop:FireServer()
+            end)
             
-            -- 4. التحقق من سعة المكينة وتشغيلها إذا كانت ممتلئة
+            -- 4. تشغيل المكينة إذا كانت ممتلئة
             local config = machine:FindFirstChild("Configurations")
             local capacity = config and config:FindFirstChild("Capacity")
             
             if capacity and capacity.Value >= 5 then
                 if spinMachine(machine) then
-                    -- 5. التقاط WoolBundle بعد التشغيل
+                    -- 5. جمع WoolBundle الناتج
                     if pickupWoolBundle() then
-                        -- 6. تخزين WoolBundle في المخزن
-                        storeItemInStorage()
+                        -- 6. تخزين WoolBundle
+                        storeWoolBundle()
                     end
                 end
             end
