@@ -1,4 +1,5 @@
-local player = game:GetService("Players").LocalPlayer
+local Players = game:GetService("Players")
+local player = Players.LocalPlayer
 local character = player.Character or player.CharacterAdded:Wait()
 local humanoidRootPart = character:WaitForChild("HumanoidRootPart")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -12,30 +13,36 @@ local STORAGE_SEARCH_RADIUS = 50
 
 -- وظائف المساعدة
 local function debugPrint(msg)
-    print("[DEBUG] "..msg)
+    print("[DEBUG] "..os.date("%X").." "..msg)
 end
 
 local function safeTeleport(cframe)
-    pcall(function()
+    if not cframe then return false end
+    local success, err = pcall(function()
         humanoidRootPart.CFrame = cframe * CFrame.new(0, 3, 0)
         wait(0.3)
         humanoidRootPart.CFrame = cframe * CFrame.new(0, 0, 2)
         wait(0.3)
     end)
+    return success
 end
 
 -- العثور على المكينة الخاصة بالمستخدم
 local function findMyMachine()
+    local myName = player.Name
+    debugPrint("البحث عن مكينة المالك: "..myName)
+    
     for _, obj in pairs(workspace:GetDescendants()) do
         if obj.Name:lower():find("spindle") and obj:FindFirstChild("Configurations") then
             local owner = obj.Configurations:FindFirstChild("Owner")
-            if owner and owner.Value == player.Name then
+            if owner and owner.Value == myName then
                 debugPrint("تم العثور على المكينة: "..obj:GetFullName())
                 return obj
             end
         end
     end
-    debugPrint("لم يتم العثور على المكينة الخاصة بي")
+    
+    debugPrint("⚠️ لم يتم العثور على المكينة الخاصة بي")
     return nil
 end
 
@@ -44,16 +51,16 @@ local function collectWool()
     local collected = 0
     for _, wool in pairs(workspace.DraggableObjects:GetChildren()) do
         if wool.Name == "Wool" and collected < MAX_WOOL_TO_COLLECT then
-            safeTeleport(wool:GetPivot())
-            
-            local args = {[1] = wool}
-            local success = pcall(function()
-                Larry.EVTRequestToCarry:FireServer(unpack(args))
-            end)
-            
-            if success then
-                collected = collected + 1
-                debugPrint("تم جمع الصوف ("..collected.."/"..MAX_WOOL_TO_COLLECT..")")
+            if safeTeleport(wool:GetPivot()) then
+                local args = {[1] = wool}
+                local success = pcall(function()
+                    Larry.EVTRequestToCarry:FireServer(unpack(args))
+                end)
+                
+                if success then
+                    collected = collected + 1
+                    debugPrint("تم جمع الصوف ("..collected.."/"..MAX_WOOL_TO_COLLECT..")")
+                end
             end
             wait(CHECK_INTERVAL)
         end
@@ -63,7 +70,8 @@ end
 
 -- تشغيل المكينة
 local function spinMachine(machine)
-    safeTeleport(machine:GetPivot())
+    if not safeTeleport(machine:GetPivot()) then return false end
+    
     local args = {[1] = machine}
     local success = pcall(function()
         Larry.EVTAnimateSpindle:FireServer(unpack(args))
@@ -81,12 +89,13 @@ end
 local function pickupWoolBundle()
     for _, bundle in pairs(workspace.DraggableObjects:GetChildren()) do
         if bundle.Name == "WoolBundle" then
-            safeTeleport(bundle:GetPivot())
-            local args = {[1] = bundle}
-            local success = pcall(function()
-                Larry.EVTRequestToCarry:FireServer(unpack(args))
-            end)
-            return success
+            if safeTeleport(bundle:GetPivot()) then
+                local args = {[1] = bundle}
+                local success = pcall(function()
+                    Larry.EVTRequestToCarry:FireServer(unpack(args))
+                end)
+                return success
+            end
         end
     end
     return false
@@ -132,13 +141,14 @@ end
 local function storeWoolBundle()
     local storageSpot = findStorageSpot()
     if storageSpot then
-        safeTeleport(storageSpot:GetPivot())
-        local success = pcall(function()
-            Larry.EVTRequestToDrop:FireServer()
-        end)
-        if success then
-            debugPrint("تم التخزين بنجاح في "..storageSpot:GetFullName())
-            return true
+        if safeTeleport(storageSpot:GetPivot()) then
+            local success = pcall(function()
+                Larry.EVTRequestToDrop:FireServer()
+            end)
+            if success then
+                debugPrint("تم التخزين بنجاح في "..storageSpot:GetFullName())
+                return true
+            end
         end
     end
     debugPrint("فشل في العثور على مكان تخزين مناسب")
@@ -148,7 +158,7 @@ end
 -- الدورة الرئيسية
 local function mainProcess()
     while true do
-        debugPrint("بدء دورة جديدة...")
+        debugPrint("\n=== بدء دورة جديدة ===")
         
         -- 1. العثور على المكينة
         local machine = findMyMachine()
@@ -188,5 +198,5 @@ end
 -- بدء التشغيل
 local success, err = pcall(mainProcess)
 if not success then
-    debugPrint("حدث خطأ: "..err)
+    debugPrint("❌ حدث خطأ جسيم: "..err)
 end
