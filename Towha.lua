@@ -9,46 +9,70 @@ local Larry = ReplicatedStorage:WaitForChild("Modules"):WaitForChild("Larry")
 local MAX_WOOL_TO_COLLECT = 5
 local SPIN_TIME = 10
 local CHECK_INTERVAL = 1
-local STORAGE_SEARCH_RADIUS = 50
 
--- وظائف المساعدة
-local function debugPrint(msg)
-    print("[DEBUG] "..os.date("%X").." "..msg)
+-- وظيفة لطباعة معلومات التصحيح
+local function debugPrint(message)
+    print("[DEBUG] " .. os.date("%X") .. " " .. message)
 end
 
-local function safeTeleport(cframe)
-    if not cframe then return false end
+-- وظيفة الانتقال الآمن
+local function safeTeleport(targetCFrame)
+    if not targetCFrame then 
+        debugPrint("⚠️ لا يوجد هدف للانتقال إليه")
+        return false 
+    end
+    
     local success, err = pcall(function()
-        humanoidRootPart.CFrame = cframe * CFrame.new(0, 3, 0)
+        humanoidRootPart.CFrame = targetCFrame * CFrame.new(0, 3, 0)
         wait(0.3)
-        humanoidRootPart.CFrame = cframe * CFrame.new(0, 0, 2)
+        humanoidRootPart.CFrame = targetCFrame * CFrame.new(0, 0, 2)
         wait(0.3)
     end)
+    
+    if not success then
+        debugPrint("❌ فشل في الانتقال: " .. err)
+    end
     return success
 end
 
 -- العثور على المكينة الخاصة بالمستخدم
 local function findMyMachine()
-    local myName = player.Name
-    debugPrint("البحث عن مكينة المالك: "..myName)
+    debugPrint("البحث عن مكينة الغزل الخاصة بي...")
     
-    for _, obj in pairs(workspace:GetDescendants()) do
-        if obj.Name:lower():find("spindle") and obj:FindFirstChild("Configurations") then
-            local owner = obj.Configurations:FindFirstChild("Owner")
-            if owner and owner.Value == myName then
-                debugPrint("تم العثور على المكينة: "..obj:GetFullName())
-                return obj
+    -- الطريقة الأولى: البحث المباشر
+    local machine = workspace.Buildings:FindFirstChild("SpindleMachine")
+    
+    if machine then
+        debugPrint("تم العثور على مكينة في: " .. machine:GetFullName())
+        
+        local config = machine:FindFirstChild("Configurations")
+        if config then
+            local owner = config:FindFirstChild("Owner")
+            if owner then
+                debugPrint("مالك المكينة: " .. owner.Value)
+                if owner.Value == player.Name then
+                    debugPrint("✓ هذه المكينة ملكي!")
+                    return machine
+                else
+                    debugPrint("⚠️ المكينة مملوكة لشخص آخر")
+                end
+            else
+                debugPrint("❌ لا يوجد خاصية Owner في التكوينات")
             end
+        else
+            debugPrint("❌ لا يوجد مجلد Configurations")
         end
     end
     
-    debugPrint("⚠️ لم يتم العثور على المكينة الخاصة بي")
+    debugPrint("❌ لم يتم العثور على المكينة الخاصة بي")
     return nil
 end
 
 -- جمع الصوف
 local function collectWool()
     local collected = 0
+    debugPrint("بدء جمع الصوف...")
+    
     for _, wool in pairs(workspace.DraggableObjects:GetChildren()) do
         if wool.Name == "Wool" and collected < MAX_WOOL_TO_COLLECT then
             if safeTeleport(wool:GetPivot()) then
@@ -60,16 +84,22 @@ local function collectWool()
                 if success then
                     collected = collected + 1
                     debugPrint("تم جمع الصوف ("..collected.."/"..MAX_WOOL_TO_COLLECT..")")
+                else
+                    debugPrint("فشل في جمع الصوف")
                 end
             end
             wait(CHECK_INTERVAL)
         end
     end
+    
     return collected
 end
 
 -- تشغيل المكينة
 local function spinMachine(machine)
+    if not machine then return false end
+    
+    debugPrint("محاولة تشغيل المكينة...")
     if not safeTeleport(machine:GetPivot()) then return false end
     
     local args = {[1] = machine}
@@ -81,12 +111,16 @@ local function spinMachine(machine)
         debugPrint("تم تشغيل المكينة، انتظار "..SPIN_TIME.." ثانية...")
         wait(SPIN_TIME)
         return true
+    else
+        debugPrint("❌ فشل في تشغيل المكينة")
+        return false
     end
-    return false
 end
 
 -- التقاط WoolBundle
 local function pickupWoolBundle()
+    debugPrint("البحث عن WoolBundle...")
+    
     for _, bundle in pairs(workspace.DraggableObjects:GetChildren()) do
         if bundle.Name == "WoolBundle" then
             if safeTeleport(bundle:GetPivot()) then
@@ -94,17 +128,22 @@ local function pickupWoolBundle()
                 local success = pcall(function()
                     Larry.EVTRequestToCarry:FireServer(unpack(args))
                 end)
-                return success
+                
+                if success then
+                    debugPrint("✓ تم جمع WoolBundle بنجاح")
+                    return true
+                end
             end
         end
     end
+    
+    debugPrint("❌ لم يتم العثور على WoolBundle")
     return false
 end
 
 -- البحث عن مكان تخزين مناسب
 local function findStorageSpot()
-    local closestStorage = nil
-    local closestDistance = math.huge
+    debugPrint("البحث عن مكان تخزين فارغ...")
     
     for _, shed in pairs(workspace.Buildings:GetChildren()) do
         if shed.Name == "LargeWoodenShed" then
@@ -119,11 +158,8 @@ local function findStorageSpot()
                                 if slot then
                                     local occupant = slot:FindFirstChild("Occupant")
                                     if not occupant or occupant.Value == "" then
-                                        local distance = (humanoidRootPart.Position - slot.Position).Magnitude
-                                        if distance < closestDistance then
-                                            closestStorage = slot
-                                            closestDistance = distance
-                                        end
+                                        debugPrint("✓ وجد مكان تخزين فارغ في الرف "..i)
+                                        return slot
                                     end
                                 end
                             end
@@ -134,35 +170,42 @@ local function findStorageSpot()
         end
     end
     
-    return closestStorage
+    debugPrint("❌ لم يتم العثور على أماكن تخزين فارغة")
+    return nil
 end
 
 -- تخزين WoolBundle
 local function storeWoolBundle()
     local storageSpot = findStorageSpot()
-    if storageSpot then
-        if safeTeleport(storageSpot:GetPivot()) then
-            local success = pcall(function()
-                Larry.EVTRequestToDrop:FireServer()
-            end)
-            if success then
-                debugPrint("تم التخزين بنجاح في "..storageSpot:GetFullName())
-                return true
-            end
+    if not storageSpot then return false end
+    
+    if safeTeleport(storageSpot:GetPivot()) then
+        local success = pcall(function()
+            Larry.EVTRequestToDrop:FireServer()
+        end)
+        
+        if success then
+            debugPrint("✓ تم تخزين WoolBundle بنجاح في "..storageSpot:GetFullName())
+            return true
+        else
+            debugPrint("❌ فشل في تخزين WoolBundle")
         end
     end
-    debugPrint("فشل في العثور على مكان تخزين مناسب")
     return false
 end
 
 -- الدورة الرئيسية
 local function mainProcess()
+    debugPrint("بدء تشغيل السكربت التجريبي...")
+    
     while true do
-        debugPrint("\n=== بدء دورة جديدة ===")
+        debugPrint("\n"..string.rep("=", 50))
+        debugPrint("بدء دورة عمل جديدة")
         
         -- 1. العثور على المكينة
         local machine = findMyMachine()
         if not machine then
+            debugPrint("انتظار 10 ثواني قبل المحاولة مجدداً...")
             wait(10)
             continue
         end
@@ -170,15 +213,17 @@ local function mainProcess()
         -- 2. جمع الصوف
         local collected = collectWool()
         if collected == 0 then
+            debugPrint("لا يوجد صوف متاح للجمع حالياً")
             wait(5)
             continue
         end
         
         -- 3. وضع الصوف في المكينة
-        safeTeleport(machine:GetPivot())
-        pcall(function()
-            Larry.EVTRequestToDrop:FireServer()
-        end)
+        if safeTeleport(machine:GetPivot()) then
+            pcall(function()
+                Larry.EVTRequestToDrop:FireServer()
+            end)
+        end
         
         -- 4. التحقق من السعة وتشغيل المكينة
         local capacity = machine.Configurations:FindFirstChild("Capacity")
@@ -191,12 +236,13 @@ local function mainProcess()
             end
         end
         
-        wait(5)
+        wait(5) -- انتظار بين الدورات
     end
 end
 
--- بدء التشغيل
+-- بدء التشغيل الآمن
 local success, err = pcall(mainProcess)
 if not success then
-    debugPrint("❌ حدث خطأ جسيم: "..err)
+    debugPrint("❌❌ حدث خطأ جسيم: "..err)
+    debugPrint("تتبع الخطأ: "..debug.traceback())
 end
