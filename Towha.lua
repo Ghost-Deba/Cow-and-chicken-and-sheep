@@ -140,7 +140,7 @@ local EggCollectionRunning = false
 local SheepShearingRunning = false
 local WoolCollectionRunning = false
 
--- Cow Milking Functions (كما هي)
+-- Cow Milking Functions
 function StartCowMilking()
     if CowMilkingRunning then return end
     CowMilkingRunning = true
@@ -257,7 +257,7 @@ function StopCowMilking()
     CowMilkingRunning = false
 end
 
--- Chicken Egg Collection Functions (كما هي)
+-- Chicken Egg Collection Functions
 function StartEggCollection()
     if EggCollectionRunning then return end
     EggCollectionRunning = true
@@ -302,7 +302,7 @@ function StopEggCollection()
     EggCollectionRunning = false
 end
 
--- Sheep Shearing Functions (كما هي)
+-- Sheep Shearing Functions
 function StartSheepShearing()
     if SheepShearingRunning then return end
     SheepShearingRunning = true
@@ -446,6 +446,18 @@ function StartWoolCollection()
     local ReplicatedStorage = game:GetService("ReplicatedStorage")
     local Larry = ReplicatedStorage:WaitForChild("Modules"):WaitForChild("Larry")
 
+    -- إعدادات الكود
+    local MAX_WOOL_TO_COLLECT = 5
+    local COLLECTION_INTERVAL = 1 -- زمن الانتظار بين كل قطعة صوف
+    local MACHINE_POSITION_OFFSET = CFrame.new(0, 0, 2) -- المسافة أمام المكينة
+
+    local function teleportTo(targetCFrame)
+        humanoidRootPart.CFrame = targetCFrame * CFrame.new(0, 3, 0) -- الانتقال أعلى الهدف بقليل
+        wait(0.5)
+        humanoidRootPart.CFrame = targetCFrame * CFrame.new(0, 0, 2) -- النزول أمام الهدف
+        wait(0.5)
+    end
+
     local function findMyMachine()
         for _, building in pairs(workspace.Buildings:GetChildren()) do
             if building.Name == "SpindleMachine" then
@@ -461,73 +473,118 @@ function StartWoolCollection()
         return nil
     end
 
-    local function spinMachine(machine)
-        humanoidRootPart.CFrame = machine:GetPivot() * CFrame.new(0, 0, 2)
-        wait(0.5)
+    local function collectWool()
+        local woolCount = 0
         
-        local args = { [1] = machine }
-        local success = pcall(function()
-            Larry:WaitForChild("EVTAnimateSpindle"):FireServer(unpack(args))
-        end)
-        
-        if success then
-            Rayfield:Notify({
-                Title = "Machine Started",
-                Content = "Spinning machine activated",
-                Duration = 3,
-                Image = 4483362458,
-            })
-            return true
-        end
-        return false
-    end
-
-    local function collectAndSpin()
-        -- جمع الصوف
+        -- البحث عن الصوف الموجود على الأرض
         for _, wool in pairs(workspace.DraggableObjects:GetChildren()) do
-            if wool.Name == "Wool" then
+            if wool.Name == "Wool" and woolCount < MAX_WOOL_TO_COLLECT then
                 -- الانتقال إلى الصوف
-                humanoidRootPart.CFrame = wool:GetPivot() * CFrame.new(0, 0, 2)
-                wait(0.5)
+                teleportTo(wool:GetPivot())
                 
-                -- جمع الصوف
+                -- محاولة جمع الصوف
                 local args = { [1] = wool }
-                local success = pcall(function()
+                local success, err = pcall(function()
                     Larry:WaitForChild("EVTRequestToCarry"):FireServer(unpack(args))
                 end)
                 
                 if success then
+                    woolCount = woolCount + 1
                     Rayfield:Notify({
                         Title = "Wool Collected",
-                        Content = "Successfully collected wool",
+                        Content = string.format("Collected wool (%d/%d)", woolCount, MAX_WOOL_TO_COLLECT),
                         Duration = 2,
                         Image = 4483362458,
                     })
-                    
-                    -- البحث عن المكينة
-                    local machine = findMyMachine()
-                    if machine then
-                        -- وضع الصوف في المكينة
-                        humanoidRootPart.CFrame = machine:GetPivot() * CFrame.new(0, 0, 2)
-                        wait(0.5)
-                        
-                        pcall(function()
-                            Larry:WaitForChild("EVTRequestToDrop"):FireServer()
-                        end)
-                        
-                        -- التحقق من سعة المكينة وتشغيلها إذا كانت ممتلئة
-                        local capacity = machine.Configurations:FindFirstChild("Capacity")
-                        if capacity and capacity.Value >= 5 then
-                            spinMachine(machine)
-                        end
-                    end
+                else
+                    print("Failed to collect wool: "..err)
                 end
+                
+                wait(COLLECTION_INTERVAL)
+            end
+        end
+        
+        return woolCount
+    end
+
+    local function depositAndSpin()
+        local machine = findMyMachine()
+        if not machine then
+            print("Could not find your spindle machine")
+            return false
+        end
+        
+        -- التحقق من سعة المكينة
+        local config = machine:FindFirstChild("Configurations")
+        local capacity = config and config:FindFirstChild("Capacity")
+        
+        if capacity and capacity.Value >= 5 then
+            -- تشغيل المكينة إذا كانت ممتلئة
+            local args = { [1] = machine }
+            local success, err = pcall(function()
+                Larry:WaitForChild("EVTAnimateSpindle"):FireServer(unpack(args))
+            end)
+            
+            if success then
+                Rayfield:Notify({
+                    Title = "Machine Started",
+                    Content = "Spinning machine activated",
+                    Duration = 3,
+                    Image = 4483362458,
+                })
+                return true
+            else
+                print("Failed to start machine: "..err)
+                return false
+            end
+        else
+            -- الإيداع في المكينة إذا لم تكن ممتلئة
+            teleportTo(machine:GetPivot())
+            
+            local success, err = pcall(function()
+                Larry:WaitForChild("EVTRequestToDrop"):FireServer()
+            end)
+            
+            if success then
+                Rayfield:Notify({
+                    Title = "Wool Deposited",
+                    Content = "Successfully deposited wool in machine",
+                    Duration = 2,
+                    Image = 4483362458,
+                })
+                
+                -- التحقق مرة أخرى إذا أصبحت السعة 5 بعد الإيداع
+                if capacity and capacity.Value >= 5 then
+                    local args = { [1] = machine }
+                    Larry:WaitForChild("EVTAnimateSpindle"):FireServer(unpack(args))
+                    Rayfield:Notify({
+                        Title = "Machine Started",
+                        Content = "Spinning machine activated after deposit",
+                        Duration = 3,
+                        Image = 4483362458,
+                    })
+                end
+                
+                return true
+            else
+                print("Failed to deposit wool: "..err)
+                return false
             end
         end
     end
 
+    -- الدورة الرئيسية
     while WoolCollectionRunning do
-        collectAndSpin()
+        -- جمع الصوف
+        local collectedCount = collectWool()
+        
+        if collectedCount > 0 then
+            -- الإيداع في المكينة وتشغيلها إذا كانت ممتلئة
+            depositAndSpin()
+        else
+            print("No wool available for collection")
+        end
+        
         wait(WoolCollectInterval)
     end
 end
