@@ -436,6 +436,7 @@ function StopSheepShearing()
 end
 
 -- Wool Collection Functions (المعدلة)
+-- Wool Collection Functions (بدون التحقق من المالك)
 function StartWoolCollection()
     if WoolCollectionRunning then return end
     WoolCollectionRunning = true
@@ -458,16 +459,10 @@ function StartWoolCollection()
         wait(0.5)
     end
 
-    local function findMyMachine()
+    local function findAnyMachine()
         for _, building in pairs(workspace.Buildings:GetChildren()) do
             if building.Name == "SpindleMachine" then
-                local config = building:FindFirstChild("Configurations")
-                if config then
-                    local owner = config:FindFirstChild("Owner")
-                    if owner and owner.Value == PlayerUsername then
-                        return building
-                    end
-                end
+                return building
             end
         end
         return nil
@@ -508,9 +503,9 @@ function StartWoolCollection()
     end
 
     local function depositAndSpin()
-        local machine = findMyMachine()
+        local machine = findAnyMachine()
         if not machine then
-            print("Could not find your spindle machine")
+            print("Could not find any spindle machine")
             return false
         end
         
