@@ -79,21 +79,6 @@ local WoolToggle = MainToggle:CreateToggle({
     end,
 })
 
--- Storage Section
-local StorageSection = MainToggle:CreateSection("Storage")
-local StorageToggle = MainToggle:CreateToggle({
-    Name = "Auto Store Bundles",
-    CurrentValue = false,
-    Flag = "StorageToggle",
-    Callback = function(Value)
-        if Value then
-            StartBundleStorage()
-        else
-            StopBundleStorage()
-        end
-    end,
-})
-
 -- Settings Tab
 local SettingsTab = Window:CreateTab("Settings", 4483362458)
 local SettingsSection = SettingsTab:CreateSection("Configuration")
@@ -134,15 +119,6 @@ local WoolIntervalInput = SettingsTab:CreateInput({
     end,
 })
 
-local StorageIntervalInput = SettingsTab:CreateInput({
-    Name = "Storage Check Interval (seconds)",
-    PlaceholderText = "10",
-    RemoveTextAfterFocusLost = false,
-    Callback = function(Text)
-        StorageCheckInterval = tonumber(Text) or 10
-    end,
-})
-
 local UsernameInput = SettingsTab:CreateInput({
     Name = "Your Username",
     PlaceholderText = "Enter your username",
@@ -157,16 +133,14 @@ local CowCheckInterval = 60
 local ChickenCheckInterval = 60
 local SheepCheckInterval = 60
 local WoolCollectInterval = 5
-local StorageCheckInterval = 10
 local PlayerUsername = game.Players.LocalPlayer.Name
 
 local CowMilkingRunning = false
 local EggCollectionRunning = false
 local SheepShearingRunning = false
 local WoolCollectionRunning = false
-local BundleStorageRunning = false
 
--- Cow Milking Functions (بقيت كما هي)
+-- Cow Milking Functions (كما هي)
 function StartCowMilking()
     if CowMilkingRunning then return end
     CowMilkingRunning = true
@@ -283,7 +257,7 @@ function StopCowMilking()
     CowMilkingRunning = false
 end
 
--- Chicken Egg Collection Functions (بقيت كما هي)
+-- Chicken Egg Collection Functions (كما هي)
 function StartEggCollection()
     if EggCollectionRunning then return end
     EggCollectionRunning = true
@@ -328,7 +302,7 @@ function StopEggCollection()
     EggCollectionRunning = false
 end
 
--- Sheep Shearing Functions (بقيت كما هي)
+-- Sheep Shearing Functions (كما هي)
 function StartSheepShearing()
     if SheepShearingRunning then return end
     SheepShearingRunning = true
@@ -461,7 +435,7 @@ function StopSheepShearing()
     SheepShearingRunning = false
 end
 
--- Wool Collection Functions
+-- Wool Collection Functions (المعدلة)
 function StartWoolCollection()
     if WoolCollectionRunning then return end
     WoolCollectionRunning = true
@@ -472,7 +446,44 @@ function StartWoolCollection()
     local ReplicatedStorage = game:GetService("ReplicatedStorage")
     local Larry = ReplicatedStorage:WaitForChild("Modules"):WaitForChild("Larry")
 
-    local function collectWool()
+    local function findMyMachine()
+        for _, building in pairs(workspace.Buildings:GetChildren()) do
+            if building.Name == "SpindleMachine" then
+                local config = building:FindFirstChild("Configurations")
+                if config then
+                    local owner = config:FindFirstChild("Owner")
+                    if owner and owner.Value == PlayerUsername then
+                        return building
+                    end
+                end
+            end
+        end
+        return nil
+    end
+
+    local function spinMachine(machine)
+        humanoidRootPart.CFrame = machine:GetPivot() * CFrame.new(0, 0, 2)
+        wait(0.5)
+        
+        local args = { [1] = machine }
+        local success = pcall(function()
+            Larry:WaitForChild("EVTAnimateSpindle"):FireServer(unpack(args))
+        end)
+        
+        if success then
+            Rayfield:Notify({
+                Title = "Machine Started",
+                Content = "Spinning machine activated",
+                Duration = 3,
+                Image = 4483362458,
+            })
+            return true
+        end
+        return false
+    end
+
+    local function collectAndSpin()
+        -- جمع الصوف
         for _, wool in pairs(workspace.DraggableObjects:GetChildren()) do
             if wool.Name == "Wool" then
                 -- الانتقال إلى الصوف
@@ -492,13 +503,31 @@ function StartWoolCollection()
                         Duration = 2,
                         Image = 4483362458,
                     })
+                    
+                    -- البحث عن المكينة
+                    local machine = findMyMachine()
+                    if machine then
+                        -- وضع الصوف في المكينة
+                        humanoidRootPart.CFrame = machine:GetPivot() * CFrame.new(0, 0, 2)
+                        wait(0.5)
+                        
+                        pcall(function()
+                            Larry:WaitForChild("EVTRequestToDrop"):FireServer()
+                        end)
+                        
+                        -- التحقق من سعة المكينة وتشغيلها إذا كانت ممتلئة
+                        local capacity = machine.Configurations:FindFirstChild("Capacity")
+                        if capacity and capacity.Value >= 5 then
+                            spinMachine(machine)
+                        end
+                    end
                 end
             end
         end
     end
 
     while WoolCollectionRunning do
-        collectWool()
+        collectAndSpin()
         wait(WoolCollectInterval)
     end
 end
@@ -507,90 +536,11 @@ function StopWoolCollection()
     WoolCollectionRunning = false
 end
 
--- Bundle Storage Functions
-function StartBundleStorage()
-    if BundleStorageRunning then return end
-    BundleStorageRunning = true
-    
-    local player = game.Players.LocalPlayer
-    local character = player.Character or player.CharacterAdded:Wait()
-    local humanoidRootPart = character:WaitForChild("HumanoidRootPart")
-    local ReplicatedStorage = game:GetService("ReplicatedStorage")
-    local Larry = ReplicatedStorage:WaitForChild("Modules"):WaitForChild("Larry")
-
-    local function storeBundles()
-        -- البحث عن WoolBundle
-        for _, bundle in pairs(workspace.DraggableObjects:GetChildren()) do
-            if bundle.Name == "WoolBundle" then
-                -- حمل الحزمة
-                humanoidRootPart.CFrame = bundle:GetPivot() * CFrame.new(0, 0, 2)
-                wait(0.5)
-                
-                local args = { [1] = bundle }
-                local success = pcall(function()
-                    Larry:WaitForChild("EVTRequestToCarry"):FireServer(unpack(args))
-                end)
-                
-                if success then
-                    -- البحث عن مخزن فارغ
-                    for _, shed in pairs(workspace.Buildings:GetChildren()) do
-                        if shed.Name == "LargeWoodenShed" then
-                            local racks = shed:FindFirstChild("StorageRacks")
-                            if racks then
-                                for _, rack in pairs(racks:GetChildren()) do
-                                    if rack.Name == "StorageRack" then
-                                        local storage = rack:FindFirstChild("Storage")
-                                        if storage then
-                                            for i = 1, 3 do
-                                                local slot = storage:FindFirstChild(tostring(i))
-                                                if slot then
-                                                    local occupant = slot:FindFirstChild("Occupant")
-                                                    if not occupant or occupant.Value == "" then
-                                                        -- وضع الحزمة في المخزن
-                                                        humanoidRootPart.CFrame = slot:GetPivot() * CFrame.new(0, 0, 2)
-                                                        wait(0.5)
-                                                        
-                                                        pcall(function()
-                                                            Larry:WaitForChild("EVTRequestToDrop"):FireServer()
-                                                        end)
-                                                        
-                                                        Rayfield:Notify({
-                                                            Title = "Bundle Stored",
-                                                            Content = "Stored in rack "..i,
-                                                            Duration = 2,
-                                                            Image = 4483362458,
-                                                        })
-                                                        return
-                                                    end
-                                                end
-                                            end
-                                        end
-                                    end
-                                end
-                            end
-                        end
-                    end
-                end
-            end
-        end
-    end
-
-    while BundleStorageRunning do
-        storeBundles()
-        wait(StorageCheckInterval)
-    end
-end
-
-function StopBundleStorage()
-    BundleStorageRunning = false
-end
-
 -- Initialize default values
 CowInterval:Set("60")
 ChickenIntervalInput:Set("60")
 SheepIntervalInput:Set("60")
 WoolIntervalInput:Set("5")
-StorageIntervalInput:Set("10")
 UsernameInput:Set(game.Players.LocalPlayer.Name)
 
 Rayfield:Notify({
