@@ -111,20 +111,11 @@ local SheepIntervalInput = SettingsTab:CreateInput({
 })
 
 local WoolIntervalInput = SettingsTab:CreateInput({
-    Name = "Wool Collect Interval (seconds)",
-    PlaceholderText = "5",
+    Name = "Wool Check Interval (seconds)",
+    PlaceholderText = "60",
     RemoveTextAfterFocusLost = false,
     Callback = function(Text)
-        WoolCollectInterval = tonumber(Text) or 5
-    end,
-})
-
-local UsernameInput = SettingsTab:CreateInput({
-    Name = "Your Username",
-    PlaceholderText = "Enter your username",
-    RemoveTextAfterFocusLost = false,
-    Callback = function(Text)
-        PlayerUsername = Text
+        WoolCollectInterval = tonumber(Text) or 60
     end,
 })
 
@@ -132,9 +123,7 @@ local UsernameInput = SettingsTab:CreateInput({
 local CowCheckInterval = 60
 local ChickenCheckInterval = 60
 local SheepCheckInterval = 60
-local WoolCollectInterval = 5
-local PlayerUsername = game.Players.LocalPlayer.Name
-
+local WoolCollectInterval = 60
 local CowMilkingRunning = false
 local EggCollectionRunning = false
 local SheepShearingRunning = false
@@ -435,8 +424,7 @@ function StopSheepShearing()
     SheepShearingRunning = false
 end
 
--- Wool Collection Functions (المعدلة)
--- Wool Collection Functions (بدون التحقق من المالك)
+-- Wool Collection Functions
 function StartWoolCollection()
     if WoolCollectionRunning then return end
     WoolCollectionRunning = true
@@ -592,8 +580,7 @@ end
 CowInterval:Set("60")
 ChickenIntervalInput:Set("60")
 SheepIntervalInput:Set("60")
-WoolIntervalInput:Set("5")
-UsernameInput:Set(game.Players.LocalPlayer.Name)
+WoolIntervalInput:Set("60")
 
 Rayfield:Notify({
     Title = "Farm Helper Loaded",
